@@ -133,6 +133,31 @@ st.markdown(
     .welcome-title { margin:6px 0; color:var(--ink); font-family:'Manrope',sans-serif; font-size:18px; font-weight:700; }
     .welcome-copy { max-width:440px; margin:0 auto; color:var(--muted); font-size:12px; line-height:1.6; }
     .chat-footnote { margin:8px 0 0; color:#929b93; text-align:center; font-size:10px; }
+    [data-testid="stSidebar"] {
+      background:linear-gradient(180deg,#f1f5f0 0%,#f8faf7 100%);
+      border-right:1px solid #e3eae2;
+    }
+    .about-card {
+      margin-top:12px; padding:17px 16px; border:1px solid #dfe8df;
+      border-radius:14px; background:rgba(255,255,255,.82);
+      box-shadow:0 7px 22px rgba(42,65,48,.035);
+    }
+    .about-kicker {
+      color:var(--green); font-family:'DM Mono',monospace; font-size:9px;
+      letter-spacing:.12em; text-transform:uppercase;
+    }
+    .about-name {
+      margin:8px 0 3px; color:var(--ink); font-family:'Manrope',sans-serif;
+      font-size:20px; font-weight:700; letter-spacing:-.045em;
+    }
+    .about-role { margin:0; color:var(--muted); font-size:12px; }
+    .about-divider { height:1px; margin:16px 0; background:#e7ece6; }
+    .poc-badge {
+      display:inline-block; margin:8px 0; padding:4px 8px; border-radius:20px;
+      background:var(--green-pale); color:var(--green-dark);
+      font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.05em;
+    }
+    .about-copy { margin:3px 0 0; color:#68736a; font-size:11px; line-height:1.65; }
     div[data-testid="stChatMessage"] { padding:9px 12px; }
     div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
       border-radius:12px 12px 4px 12px; background:var(--green); color:white;
@@ -157,6 +182,23 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="about-card">
+          <div class="about-kicker">About the creator</div>
+          <div class="about-name">Sandip Bhosale</div>
+          <p class="about-role">Creator of RepoGuide</p>
+          <div class="about-divider"></div>
+          <div class="about-kicker">About this project</div>
+          <span class="poc-badge">PROOF OF CONCEPT</span>
+          <p class="about-copy">RepoGuide is an early-stage AI assistant experiment for exploring public GitHub repositories. It retrieves selected repository files and asks an OpenRouter model to explain them.</p>
+          <p class="about-copy">This demo can make mistakes and does not modify repositories. Please verify important answers against the source code.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 if "repository_url" not in st.session_state:
     st.session_state.repository_url = ""

@@ -73,7 +73,9 @@ class ChatRequest(BaseModel):
 app = FastAPI(title="GitHub Repository AI Agent")
 allowed_origins = [
     origin.strip()
-    for origin in os.getenv("FRONTEND_ORIGINS", "*").split(",")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000"
+    ).split(",")
     if origin.strip()
 ]
 app.add_middleware(
@@ -87,11 +89,19 @@ app.add_middleware(
 
 def parse_repository_url(repository_url: str) -> tuple[str, str]:
     """Return the owner and repository from a public github.com URL."""
-    parsed = urlparse(repository_url.strip())
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
-        "github.com",
-        "www.github.com",
-    }:
+    try:
+        parsed = urlparse(repository_url.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a public GitHub URL like https://github.com/owner/repository.",
+        ) from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname not in {"github.com", "www.github.com"}
+        or parsed.username
+        or parsed.password
+    ):
         raise HTTPException(
             status_code=400,
             detail="Enter a public GitHub URL like https://github.com/owner/repository.",
@@ -117,8 +127,7 @@ def rank_repository_paths(paths: list[str], question: str) -> list[str]:
     tokens = set(re.findall(r"[a-z0-9_+-]{2,}", question.lower()))
     candidates: list[tuple[int, str]] = []
     for path in paths:
-        parts = path.split("/")
-        lowered_parts = [part.lower() for part in parts]
+        lowered_parts = [part.lower() for part in path.split("/")]
         if any(part in SKIP_PARTS for part in lowered_parts):
             continue
         filename = lowered_parts[-1]
@@ -152,7 +161,7 @@ async def fetch_repository_context(
             status_code=404,
             detail="Repository not found or not public. Check the URL and try again.",
         )
-    if repo_response.status_code == 403:
+    if repo_response.status_code in {403, 429}:
         raise HTTPException(
             status_code=429,
             detail="GitHub's unauthenticated API limit was reached. Please try again later.",
@@ -166,7 +175,10 @@ async def fetch_repository_context(
     if not branch:
         raise HTTPException(status_code=502, detail="GitHub did not return a default branch.")
 
-    tree_url = f"{GITHUB_API}/repos/{quote(owner)}/{quote(repository)}/git/trees/{quote(branch, safe='')}?recursive=1"
+    tree_url = (
+        f"{GITHUB_API}/repos/{quote(owner)}/{quote(repository)}/git/trees/"
+        f"{quote(branch, safe='')}?recursive=1"
+    )
     try:
         tree_response = await client.get(tree_url)
     except httpx.HTTPError as exc:
@@ -181,7 +193,7 @@ async def fetch_repository_context(
                 "then try again."
             ),
         )
-    if tree_response.status_code == 403:
+    if tree_response.status_code in {403, 429}:
         raise HTTPException(
             status_code=429,
             detail="GitHub's unauthenticated API limit was reached. Please try again later.",
@@ -233,7 +245,6 @@ async def fetch_repository_context(
             status_code=422,
             detail="I couldn't find readable text files in that repository to inspect.",
         )
-
     return full_name, "\n\n".join(context_parts)
 
 
@@ -257,11 +268,6 @@ async def generate_answer(
         *[message.model_dump() for message in history],
         {"role": "user", "content": question},
     ]
-    request_body = {
-        "model": MODEL,
-        "messages": messages,
-        "max_tokens": 800,
-    }
     try:
         async with httpx.AsyncClient(timeout=60.0) as model_client:
             response = await model_client.post(
@@ -269,12 +275,14 @@ async def generate_answer(
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {api_key}",
-                    "HTTP-Referer": os.getenv(
-                        "OPENROUTER_SITE_URL", "https://github.com"
-                    ),
-                    "X-Title": "RepoGuide",
+                    "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "http://localhost"),
+                    "X-Title": "RepoGuide Local",
                 },
-                json=request_body,
+                json={
+                    "model": MODEL,
+                    "messages": messages,
+                    "max_tokens": 800,
+                },
             )
     except httpx.HTTPError as exc:
         raise HTTPException(
@@ -290,7 +298,7 @@ async def generate_answer(
     if response.status_code == 401:
         raise HTTPException(
             status_code=502,
-            detail="OpenRouter rejected the API key. Check OPENROUTER_API_KEY on the backend.",
+            detail="OpenRouter rejected the API key. Check OPENROUTER_API_KEY in your local .env.",
         )
     if response.status_code == 402:
         raise HTTPException(
@@ -339,7 +347,7 @@ async def chat(request: ChatRequest) -> dict[str, str]:
     if not api_key:
         raise HTTPException(
             status_code=503,
-            detail="The AI service is not configured yet. Set OPENROUTER_API_KEY on the backend.",
+            detail="The AI service is not configured. Add OPENROUTER_API_KEY to your local .env.",
         )
 
     owner, repository = parse_repository_url(request.repository)

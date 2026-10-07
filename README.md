@@ -1,69 +1,51 @@
 # RepoGuide
 
-RepoGuide is a small AI assistant for exploring **any public GitHub repository**. The website is static and deploys to GitHub Pages; its Python API runs separately on Render and uses OpenRouter's free-model router to answer questions using repository files.
+Ask questions about any public GitHub repository. The app uses Python and Streamlit; GitHub is used to read public repository files and OpenRouter provides AI answers, so an internet connection is required.
 
-## Run locally
+## Run locally on Windows
 
 1. Install Python 3.10 or newer.
-2. Create and activate a virtual environment, then install dependencies:
+2. From this folder, create and activate a virtual environment, then install dependencies:
 
    ```powershell
    py -m venv .venv
    .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-3. Copy the example environment file and open `.env`:
+3. If you do not already have a local `.env` file, copy the example:
 
    ```powershell
    Copy-Item .env.example .env
-   notepad .env
    ```
 
-   Replace the example value with your **new** OpenRouter API key. `.env` is ignored by Git; never commit or share it.
-
-4. Start the backend from the project root, loading `.env`:
+   Open `.env` and replace the example value with a **new OpenRouter API key**. The key previously shared in chat should be revoked and must not be reused. Keep `.env` private; it is excluded from Git.
+4. Start the app from the project folder:
 
    ```powershell
-   uvicorn backend.main:app --reload --env-file .env
+   .\.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1
    ```
 
-5. Open `frontend/index.html` in a local web server (for example, with VS Code Live Server). The default API URL in `frontend/config.js` is `http://localhost:8000`.
+5. Open <http://localhost:8501/> in your browser. Stop the app with `Ctrl+C`.
 
-## Deploy the backend to Render
+When run locally, the service binds to `127.0.0.1` and is available only on your computer. Questions and selected public-repository excerpts are sent over the internet to OpenRouter for answers. OpenRouter's free model availability and request limits may vary.
 
-1. Push this repository to GitHub.
-2. In Render, create a new **Blueprint** from the repository and use `render.yaml`.
-3. Create an OpenRouter API key in [OpenRouter](https://openrouter.ai/settings/keys) and set `OPENROUTER_API_KEY` in the Render service environment. Free models have limited availability and rate limits. The service URL will look like `https://repoguide-api.onrender.com`.
-4. Replace the `apiBaseUrl` value in `frontend/config.js` with that service URL.
-5. In Render, set `FRONTEND_ORIGINS` to your Pages origin, such as `https://yourname.github.io`. Do not include the project path; browser origins contain only the scheme and host. Separate multiple origins with commas.
-6. Commit and push the `config.js` update.
+## Deploy online with Streamlit Community Cloud
 
-Never put the OpenRouter API key in frontend files or commit it to GitHub.
+1. Push this project to a GitHub repository. The repository must include `app.py`, `backend/`, and `requirements.txt`.
+2. In [Streamlit Community Cloud](https://share.streamlit.io/), create an app from that repository, select the `main` branch, and set the main file path to `app.py`.
+3. In **Advanced settings → Secrets**, add:
 
-## Deploy the website to GitHub Pages
+   ```toml
+   OPENROUTER_API_KEY = "your-new-openrouter-key"
+   ```
 
-1. In the GitHub repository, open **Settings → Pages** and set the build and deployment source to **GitHub Actions**.
-2. Push to the `main` branch (or run the **Deploy GitHub Pages** workflow manually from the Actions tab).
-3. Open the Pages URL shown in the workflow deployment.
+4. Deploy the app. Do not put the API key in GitHub, `app.py`, or any committed file. The public GitHub repository makes the source code visible to everyone.
 
-The Pages workflow publishes only the `frontend` directory. Configure the Render backend first and update `frontend/config.js` before relying on the published site.
+Free Community Cloud apps may sleep when unused and take a short time to wake up. Questions and selected excerpts from public repositories are sent to OpenRouter.
 
-## How it works
+## Troubleshooting
 
-- The browser sends a repository URL and question to the Python API; the OpenRouter key stays on Render.
-- The API accepts `github.com/owner/repository` public URLs, reads the default branch, and fetches a small set of relevant text files through GitHub's public API.
-- Repository files are treated as untrusted data. The assistant is instructed to cite file paths and say when the available source excerpts are insufficient.
-- The unauthenticated GitHub API has rate limits. GitHub may ask the service to wait before it can inspect more repositories.
-
-## Configuration
-
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `OPENROUTER_API_KEY` | OpenRouter API key (backend only) | Required |
-| `OPENROUTER_MODEL` | OpenRouter model or router ID | `openrouter/free` |
-| `FRONTEND_ORIGINS` | Comma-separated browser origins allowed by the API | `*` |
-
-Set `FRONTEND_ORIGINS` to the exact website origin for deployment rather than `*`.
-
-OpenRouter's free model availability, rate limits, and provider data policies can vary. Review the [free models documentation](https://openrouter.ai/docs/guides/routing/model-variants/free) and the terms for the selected model provider before using the app.
+- If the key is rejected, confirm that `OPENROUTER_API_KEY` in `.env` contains a valid replacement key.
+- If GitHub or OpenRouter reports a rate limit, wait and try again later.
+- Empty public repositories cannot be analyzed until they contain at least one pushed file.

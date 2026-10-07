@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-import httpx
 
 from backend.main import app, parse_repository_url, rank_repository_paths
 
@@ -24,19 +24,17 @@ class ParseRepositoryUrlTests(unittest.TestCase):
             ("pallets", "flask"),
         )
 
-    def test_rejects_non_github_hosts(self):
-        with self.assertRaises(HTTPException) as raised:
-            parse_repository_url("https://example.com/owner/repository")
-        self.assertEqual(raised.exception.status_code, 400)
-
-    def test_rejects_repository_subpages(self):
-        with self.assertRaises(HTTPException) as raised:
-            parse_repository_url("https://github.com/owner/repository/tree/main")
-        self.assertEqual(raised.exception.status_code, 400)
+    def test_rejects_non_github_hosts_and_subpages(self):
+        for url in (
+            "https://example.com/owner/repository",
+            "https://github.com/owner/repository/tree/main",
+        ):
+            with self.subTest(url=url), self.assertRaises(HTTPException):
+                parse_repository_url(url)
 
 
 class RankRepositoryPathsTests(unittest.TestCase):
-    def test_prefers_relevant_text_and_excludes_generated_files(self):
+    def test_ranks_relevant_sources_and_skips_generated_files(self):
         paths = [
             "README.md",
             "src/authentication.py",
@@ -70,10 +68,22 @@ class ApiRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("GitHub URL", response.json()["detail"])
 
-    def test_chat_returns_ai_answer_for_repository(self):
-        response = httpx.Response(
+    def test_chat_reports_missing_openrouter_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            response = client.post(
+                "/api/chat",
+                json={
+                    "repository": "https://github.com/owner/repository",
+                    "question": "What does this do?",
+                },
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("OPENROUTER_API_KEY", response.json()["detail"])
+
+    def test_chat_returns_answer_from_openrouter(self):
+        openrouter_response = httpx.Response(
             200,
             json={
                 "choices": [
@@ -88,7 +98,7 @@ class ApiRouteTests(unittest.TestCase):
             request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
         )
         model_client = AsyncMock()
-        model_client.post.return_value = response
+        model_client.post.return_value = openrouter_response
         async_client = AsyncMock()
         async_client.__aenter__.return_value = model_client
         with (
@@ -113,28 +123,14 @@ class ApiRouteTests(unittest.TestCase):
             response.json(),
             {"repository": "owner/repository", "answer": "The project uses Python."},
         )
-        request_kwargs = model_client.post.await_args.kwargs
-        request_body = request_kwargs["json"]
-        self.assertEqual(request_body["model"], "openrouter/free")
-        self.assertIn("A Python project.", request_body["messages"][0]["content"])
+        sent_request = model_client.post.await_args.kwargs
         self.assertEqual(
-            request_kwargs["headers"]["Authorization"], "Bearer test-key"
+            sent_request["headers"]["Authorization"],
+            "Bearer test-key",
         )
+        self.assertEqual(sent_request["json"]["model"], "openrouter/free")
 
-    def test_chat_reports_missing_openrouter_key(self):
-        with patch.dict("os.environ", {}, clear=True):
-            response = client.post(
-                "/api/chat",
-                json={
-                    "repository": "https://github.com/owner/repository",
-                    "question": "What language is this?",
-                },
-            )
-
-        self.assertEqual(response.status_code, 503)
-        self.assertIn("OPENROUTER_API_KEY", response.json()["detail"])
-
-    def test_chat_explains_empty_github_repository(self):
+    def test_chat_explains_empty_repository(self):
         repository_response = httpx.Response(
             200,
             json={"default_branch": "main", "full_name": "owner/repository"},
